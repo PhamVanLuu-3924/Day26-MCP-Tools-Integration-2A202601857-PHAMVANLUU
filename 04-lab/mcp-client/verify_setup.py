@@ -3,9 +3,16 @@
 Verification script for Weather Agent setup
 Checks if all components are configured correctly
 """
+import asyncio
 import os
 import sys
 from pathlib import Path
+
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).resolve().parent / ".env")
+
+MCP_SERVER_URL = os.getenv("MCP_SERVER_URL", "http://localhost:8085/mcp")
 
 def check_environment():
     """Check if .env file exists and is configured"""
@@ -18,16 +25,13 @@ def check_environment():
         return False
     
     # Check if GOOGLE_API_KEY is set
-    from dotenv import load_dotenv
-    load_dotenv()
-    
     api_key = os.getenv("GOOGLE_API_KEY")
     if not api_key or api_key == "your_google_api_key_here":
         print("❌ GOOGLE_API_KEY not configured in .env")
         print("   Get key from: https://aistudio.google.com/apikey")
         return False
     
-    print(f"✅ GOOGLE_API_KEY configured ({api_key[:10]}...)")
+    print("✅ GOOGLE_API_KEY configured (value hidden)")
     return True
 
 def check_dependencies():
@@ -36,7 +40,7 @@ def check_dependencies():
     
     required_packages = [
         ("google.adk", "Google ADK"),
-        ("google.generativeai", "Google Generative AI"),
+        ("google.genai", "Google Gen AI SDK"),
         ("mcp", "MCP"),
         ("fastmcp", "FastMCP"),
         ("dotenv", "python-dotenv"),
@@ -78,32 +82,34 @@ def check_agent_structure():
     
     return all_exist
 
+async def _list_mcp_tools():
+    from mcp import ClientSession
+    from mcp.client.streamable_http import streamable_http_client
+
+    async with streamable_http_client(MCP_SERVER_URL) as (read, write, _):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            return await session.list_tools()
+
+
 def check_mcp_server():
     """Check if MCP server is accessible"""
     print("\n🔍 Checking MCP server connectivity...")
     
-    server_url = "https://weather-mcp-server-oze7nwnjba-as.a.run.app"
-    
     try:
-        import httpx
-        import asyncio
-        
-        async def test_connection():
-            async with httpx.AsyncClient() as client:
-                response = await client.get(server_url, timeout=10.0)
-                return response.status_code
-        
-        status_code = asyncio.run(test_connection())
-        
-        if status_code in [200, 404]:  # 404 is expected for GET on MCP endpoint
-            print(f"✅ MCP server reachable at {server_url}")
-            return True
-        else:
-            print(f"⚠️  MCP server returned status {status_code}")
+        tools = asyncio.run(_list_mcp_tools())
+        names = [tool.name for tool in tools.tools]
+        expected = {"get_current_weather", "get_forecast", "health_check"}
+        missing = expected.difference(names)
+        if missing:
+            print(f"❌ MCP server is missing tools: {sorted(missing)}")
             return False
-            
+        print(f"✅ MCP server connected at {MCP_SERVER_URL}")
+        print(f"   Tools: {', '.join(names)}")
+        return True
     except Exception as e:
         print(f"❌ Cannot reach MCP server: {e}")
+        print("   Start it first: cd ../mcp-server; uv run python weather.py")
         return False
 
 def check_agent_import():
@@ -142,8 +148,7 @@ def main():
     if all(checks):
         print("✅ All checks passed!")
         print("\n🚀 Ready to start!")
-        print("   Run: ./start_agent.sh")
-        print("   Or:  uv run adk web")
+        print("   Run: uv run adk web")
         print("\n📍 Then open: http://localhost:8000")
         return 0
     else:

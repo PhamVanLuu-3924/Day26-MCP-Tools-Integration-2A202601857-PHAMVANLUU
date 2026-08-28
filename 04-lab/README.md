@@ -50,6 +50,38 @@ So với bài 02 (viết client thủ công bằng `mcp.ClientSession`), ADK gi�
 
 ## Setup
 
+### Quick start trên Windows PowerShell
+
+Lab chạy được ngay với dữ liệu demo, không bắt buộc có WeatherAPI key. Mở hai terminal:
+
+```powershell
+# Terminal 1 - MCP server
+cd .\mcp-server
+uv sync --locked
+$env:PYTHONUTF8="1"
+uv run python weather.py
+```
+
+```powershell
+# Terminal 2 - ADK client
+cd .\mcp-client
+uv sync --locked
+$env:PYTHONUTF8="1"
+uv run python verify_setup.py
+uv run python smoke_test.py
+uv run adk web
+```
+
+Mở http://localhost:8000 và chọn `weather_agent`.
+
+Để dùng WeatherAPI thật trong Terminal 1:
+
+```powershell
+$env:WEATHER_DATA_MODE="live"
+$env:WEATHERAPI_KEY="your_weatherapi_key"
+uv run python weather.py
+```
+
 ### 1. MCP Server
 
 ```bash
@@ -87,3 +119,5 @@ Open http://localhost:8000 in your browser, select `weather_agent`, and ask abou
 | `WEATHERAPI_KEY` | mcp-server | API key from weatherapi.com |
 | `GOOGLE_API_KEY` | mcp-client/.env | Gemini API key |
 | `PORT` | mcp-server (env) | Override server port (default: 8085) |
+| `WEATHER_DATA_MODE` | mcp-server | `auto` (default), `mock`, or `live` |
+| `MCP_SERVER_URL` | mcp-client | MCP endpoint (default: `http://localhost:8085/mcp`) |

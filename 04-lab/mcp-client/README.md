@@ -36,6 +36,8 @@ AI agent built with **Google Agent Development Kit (ADK)** that uses tools from 
 
 ## Quick Start
 
+> Windows PowerShell: set `$env:PYTHONUTF8="1"` before running the commands so Vietnamese text and emoji render correctly.
+
 ### 1. Start the MCP Server
 
 ```bash
@@ -54,6 +56,12 @@ cd mcp-client
 echo "GOOGLE_API_KEY=your_google_api_key_here" > .env
 ```
 
+PowerShell equivalent:
+
+```powershell
+Set-Content -LiteralPath .env -Value 'GOOGLE_API_KEY=your_google_api_key_here'
+```
+
 ### 3. Install Dependencies
 
 ```bash
@@ -64,6 +72,13 @@ uv sync
 
 ```bash
 uv run adk web
+```
+
+Before opening the UI, verify the complete local setup:
+
+```bash
+uv run python verify_setup.py
+uv run python smoke_test.py
 ```
 
 ### 5. Use the Agent

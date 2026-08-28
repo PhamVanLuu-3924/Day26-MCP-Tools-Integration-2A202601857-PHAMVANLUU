@@ -1,7 +1,8 @@
-from typing import Any
-import asyncio
-import httpx
+from datetime import date, timedelta
 import os
+from typing import Any
+
+import httpx
 from mcp.server.fastmcp import FastMCP
 
 # Initialize FastMCP server
@@ -14,12 +15,107 @@ USER_AGENT = "weather-app/1.0"
 
 # Get API key from environment variable
 API_KEY = os.getenv("WEATHERAPI_KEY")
+DATA_MODE = os.getenv("WEATHER_DATA_MODE", "auto").lower()
+
+if DATA_MODE not in {"auto", "live", "mock"}:
+    raise ValueError("WEATHER_DATA_MODE must be one of: auto, live, mock")
+
+USE_LIVE_API = DATA_MODE == "live" or (DATA_MODE == "auto" and bool(API_KEY))
+DATA_SOURCE = "WeatherAPI.com" if USE_LIVE_API else "demo data"
+
+_MOCK_WEATHER = {
+    "hanoi": {
+        "name": "Hanoi", "region": "Hanoi", "country": "Vietnam",
+        "temp_c": 29, "condition": "Light rain", "humidity": 82, "wind_kph": 12,
+    },
+    "haiphong": {
+        "name": "Haiphong", "region": "Hai Phong", "country": "Vietnam",
+        "temp_c": 31, "condition": "Rain showers", "humidity": 80, "wind_kph": 15,
+    },
+    "danang": {
+        "name": "Da Nang", "region": "Da Nang", "country": "Vietnam",
+        "temp_c": 30, "condition": "Partly cloudy", "humidity": 78, "wind_kph": 10,
+    },
+    "da nang": {
+        "name": "Da Nang", "region": "Da Nang", "country": "Vietnam",
+        "temp_c": 30, "condition": "Partly cloudy", "humidity": 78, "wind_kph": 10,
+    },
+    "ho chi minh": {
+        "name": "Ho Chi Minh City", "region": "Ho Chi Minh", "country": "Vietnam",
+        "temp_c": 33, "condition": "Rain showers", "humidity": 75, "wind_kph": 14,
+    },
+}
+
+
+def _mock_response(endpoint: str, params: dict[str, str]) -> dict[str, Any]:
+    """Build a WeatherAPI-shaped response for an offline classroom demo."""
+    query = params.get("q", "Hanoi")
+    item = _MOCK_WEATHER.get(query.strip().lower())
+    if item is None:
+        item = {
+            "name": query,
+            "region": "Demo region",
+            "country": "Demo",
+            "temp_c": 28,
+            "condition": "No detailed demo data",
+            "humidity": 70,
+            "wind_kph": 8,
+        }
+
+    temp_c = item["temp_c"]
+    location = {
+        "name": item["name"],
+        "region": item["region"],
+        "country": item["country"],
+    }
+    current = {
+        "temp_c": temp_c,
+        "temp_f": round(temp_c * 9 / 5 + 32, 1),
+        "feelslike_c": temp_c + 1,
+        "feelslike_f": round((temp_c + 1) * 9 / 5 + 32, 1),
+        "condition": {"text": item["condition"]},
+        "humidity": item["humidity"],
+        "wind_kph": item["wind_kph"],
+        "wind_mph": round(item["wind_kph"] / 1.609, 1),
+        "wind_dir": "SE",
+        "pressure_mb": 1009,
+        "uv": 5,
+        "vis_km": 10,
+        "last_updated": "demo data",
+    }
+
+    if endpoint == "current.json":
+        return {"location": location, "current": current}
+
+    days = max(1, min(int(params.get("days", "3")), 3))
+    forecast_days = []
+    conditions = [item["condition"], "Partly cloudy", "Light rain"]
+    for offset in range(days):
+        condition = conditions[offset]
+        forecast_days.append(
+            {
+                "date": (date.today() + timedelta(days=offset)).isoformat(),
+                "day": {
+                    "maxtemp_c": temp_c + 2,
+                    "maxtemp_f": round((temp_c + 2) * 9 / 5 + 32, 1),
+                    "mintemp_c": temp_c - 3,
+                    "mintemp_f": round((temp_c - 3) * 9 / 5 + 32, 1),
+                    "condition": {"text": condition},
+                    "daily_chance_of_rain": 70 if "rain" in condition.lower() else 25,
+                    "maxwind_kph": item["wind_kph"] + 3,
+                    "uv": 5,
+                },
+            }
+        )
+    return {"location": location, "forecast": {"forecastday": forecast_days}}
 
 async def make_weather_request(endpoint: str, params: dict[str, str]) -> dict[str, Any] | None:
     """Make a request to the WeatherAPI with proper error handling."""
-    # Check if API key is set
+    if not USE_LIVE_API:
+        return _mock_response(endpoint, params)
+
     if not API_KEY:
-        print("ERROR: WeatherAPI key not set. Please set WEATHERAPI_KEY environment variable.")
+        print("ERROR: WEATHER_DATA_MODE=live requires WEATHERAPI_KEY.")
         return None
         
     headers = {
@@ -70,6 +166,8 @@ async def get_current_weather(city: str) -> str:
     return f"""
 Current Weather for {location['name']}, {location['region']}, {location['country']}:
 
+Data source: {DATA_SOURCE}
+
 Temperature: {current['temp_c']}°C ({current['temp_f']}°F)
 Feels like: {current['feelslike_c']}°C ({current['feelslike_f']}°F)
 Condition: {current['condition']['text']}
@@ -112,6 +210,7 @@ async def get_forecast(city: str, days: int = 3) -> str:
     
     forecasts = []
     forecasts.append(f"Weather Forecast for {location['name']}, {location['region']}, {location['country']}:")
+    forecasts.append(f"Data source: {DATA_SOURCE}")
     
     for day in forecast_days:
         day_data = day["day"]
@@ -133,10 +232,11 @@ UV Index: {day_data['uv']}
 @mcp.tool()
 async def health_check() -> str:
     """Health check endpoint for deployment verification."""
-    return "✅ Weather MCP Server is running! Ready to provide weather data for Australian cities and worldwide."
+    return f"✅ Weather MCP Server is running in {DATA_SOURCE} mode."
 
 print("✅ MCP server initialized with Streamable HTTP transport")
 print("🔧 Available tools: get_current_weather, get_forecast, health_check")
+print(f"📊 Data source: {DATA_SOURCE}")
 
 if __name__ == "__main__":
     import sys
